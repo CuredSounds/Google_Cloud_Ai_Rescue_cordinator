@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+google-cloud-spanner
+google-cloud-aiplatform
+pydantic
+python-dotenv
+pytest
+pydantic-settings
