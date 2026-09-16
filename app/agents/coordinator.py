@@ -1,68 +1,83 @@
+
 from typing import List
 from app.models import Scenario, Survivor, Mission
-from app.config import settings
-import vertexai
-from vertexai.generative_models import GenerativeModel
-import json
 import uuid
+import math
+import numpy as np
+
+# Reference Incident Coordinate (San Francisco Center)
+INCIDENT_LAT = 37.7749
+INCIDENT_LON = -122.4194
+
+# Simulated locations for default mock database survivors (lat, lon)
+SURVIVOR_LOCATIONS = {
+    "Alex": (37.7891, -122.4014),
+    "Sam": (37.7564, -122.4431),
+    "Jordan": (37.7011, -122.4611),
+    "Casey": (38.0124, -122.1245),
+    "Morgan": (37.7749, -122.4194),  # on-scene
+    "Riley": (37.6879, -122.4014),
+    "Quinn": (37.8044, -122.2711)
+}
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    return c * 6371
 
 class Coordinator:
     def __init__(self):
-        try:
-            vertexai.init(project=settings.PROJECT_ID, location=settings.REGION)
-            self.model = GenerativeModel("gemini-1.5-pro-preview-0409")
-        except Exception:
-            self.model = None
+        self.model = None  # Force local analytical engine
 
     async def assign_team(self, scenario: Scenario, survivors: List[Survivor]) -> Mission:
-        if not self.model:
-            return self._assign_team_mock(scenario, survivors)
+        scored_survivors = []
+        required_skill = scenario.required_skills[0] if scenario.required_skills else "Rescue"
 
-        # Convert survivors to a simplified string format for the prompt
-        survivor_list_str = "\n".join([
-            f"- {s.id}: {s.name} (Role: {s.role}, Skills: {s.skills}, XP: {s.xp_points}, Status: {s.status})"
-            for s in survivors if s.status == "On-Call"
-        ])
+        for s in survivors:
+            if s.status != "On-Call":
+                continue
 
-        prompt = f"""
-        You are the Rescue Coordinator. A crisis has occurred.
-        
-        Scenario: {scenario.title}
-        Description: {scenario.description}
-        Severity: {scenario.severity}
-        Required Skills: {scenario.required_skills}
+            # Resolve coordinates or default
+            lat, lon = SURVIVOR_LOCATIONS.get(s.name, (37.7749, -122.4194))
+            dist = haversine_distance(lat, lon, INCIDENT_LAT, INCIDENT_LON)
 
-        Available Personnel:
-        {survivor_list_str}
+            # Skill level
+            skill_level = s.skills.get(required_skill, 0)
 
-        Task: Select a team of 3 survivors to handle this crisis. 
-        Balance skill requirements with the need to train junior members (low XP).
-        
-        Return a JSON object with:
-        - reason: Brief explanation of your choice.
-        - assigned_ids: List of 3 Survivor IDs.
-        """
+            # 1. Travel Fatigue & Skill Protection factors
+            fatigue_factor = min(0.3, dist / 100.0)
+            skill_protection = min(0.2, skill_level * 0.05)
 
-        try:
-            response = await self.model.generate_content_async(prompt)
-            text = response.text.replace("```json", "").replace("```", "")
-            data = json.loads(text)
-            
-            return Mission(
-                id=str(uuid.uuid4()),
-                scenario_id=scenario.id,
-                assigned_team=data["assigned_ids"]
-            )
-        except Exception as e:
-            print(f"Error assigning team: {e}")
-            return self._assign_team_mock(scenario, survivors)
+            # 2. Probability Transitions
+            p_healthy_to_exhausted = max(0.05, 0.2 + fatigue_factor - skill_protection)
+            p_exhausted_to_injured = max(0.02, 0.15 + fatigue_factor - skill_protection)
 
-    def _assign_team_mock(self, scenario: Scenario, survivors: List[Survivor]) -> Mission:
-        # Simple random assignment of available personnel
-        available = [s.id for s in survivors if s.status == "On-Call"]
-        assigned = available[:3] if len(available) >= 3 else available
+            # 3. Estimating Survivability P_surv analytically
+            p_surv = (1.0 - (p_healthy_to_exhausted * p_exhausted_to_injured)) ** 6
+
+            # 4. Core Selection Utility score: U(d, S_k)
+            overall_score = 0.7 * p_surv + 0.3 * (1.0 / (dist + 1.0))
+
+            scored_survivors.append({
+                "id": s.id,
+                "name": s.name,
+                "score": overall_score,
+                "dist": dist
+            })
+
+        # Sort by best score
+        scored_survivors.sort(key=lambda x: x["score"], reverse=True)
+        selected_ids = [s["id"] for s in scored_survivors[:3]]
+        selected_names = [s["name"] for s in scored_survivors[:3]]
+
+        print(f"Selected deployment team: {selected_names}")
+
         return Mission(
             id=str(uuid.uuid4()),
             scenario_id=scenario.id,
-            assigned_team=assigned
+            assigned_team=selected_ids,
+            log=[f"System Coordinator selected team based on analytical utility score: {', '.join(selected_names)}"]
         )

@@ -7,8 +7,11 @@ import json
 class Evaluator:
     def __init__(self):
         try:
-            vertexai.init(project=settings.PROJECT_ID, location=settings.REGION)
-            self.model = GenerativeModel("gemini-1.5-flash-preview-0514")
+            if settings.PROJECT_ID and settings.PROJECT_ID != "your-project-id":
+                vertexai.init(project=settings.PROJECT_ID, location=settings.REGION)
+                self.model = GenerativeModel("gemini-1.5-flash-preview-0514")
+            else:
+                self.model = None
         except Exception:
             self.model = None
 

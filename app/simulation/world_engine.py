@@ -7,10 +7,13 @@ import uuid
 
 class WorldEngine:
     def __init__(self):
-        # Initialize Vertex AI
+        # Initialize Vertex AI if a real project is configured
         try:
-            vertexai.init(project=settings.PROJECT_ID, location=settings.REGION)
-            self.model = GenerativeModel("gemini-1.5-pro-preview-0409") # Or latest available
+            if settings.PROJECT_ID and settings.PROJECT_ID != "your-project-id":
+                vertexai.init(project=settings.PROJECT_ID, location=settings.REGION)
+                self.model = GenerativeModel("gemini-1.5-pro-preview-0409")
+            else:
+                self.model = None
         except Exception as e:
             print(f"Warning: Vertex AI init failed. Using mock mode. Error: {e}")
             self.model = None

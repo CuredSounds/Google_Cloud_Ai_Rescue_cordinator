@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Ensure repository root is on sys.path for direct script execution
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.config import settings
@@ -23,4 +29,4 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

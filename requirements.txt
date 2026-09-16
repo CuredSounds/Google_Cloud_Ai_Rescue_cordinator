@@ -6,3 +6,8 @@ pydantic
 python-dotenv
 pytest
 pydantic-settings
+requests
+numpy
+pandas
+matplotlib
+scikit-learn
